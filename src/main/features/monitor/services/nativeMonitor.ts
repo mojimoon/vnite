@@ -14,6 +14,9 @@ import i18next from 'i18next'
 const monitors: Map<string, GameMonitor> = new Map()
 const mutex: Mutex = new Mutex()
 
+// Store the unsubscribe function for game:deleted event listener
+let gameDeletedUnsubscribe: (() => void) | null = null
+
 // The TypeScript configuration "isolatedModules" is enabled, which prohibits the use
 // of enum values directly. This const mirrors `native.Process.ProcessEventType`.
 const ProcessEventType = {
@@ -36,8 +39,13 @@ export async function setupNativeMonitor(): Promise<void> {
   })
   await native.startMonitoring(pathes, ids, processEventCallback)
 
+  // Unsubscribe previous listener if exists to prevent duplicate listeners
+  if (gameDeletedUnsubscribe) {
+    gameDeletedUnsubscribe()
+  }
+
   // Listen for game:deleted events to clean up monitor state
-  eventBus.on('game:deleted', async (data) => {
+  gameDeletedUnsubscribe = eventBus.on('game:deleted', async (data) => {
     await removeMonitorStub(data.gameId)
     await updateKnownGames()
   })
@@ -46,6 +54,12 @@ export async function setupNativeMonitor(): Promise<void> {
 // Send a termination signal to native monitor.
 export async function stopNativeMonitor(): Promise<void> {
   await native.stopMonitoring()
+  
+  // Unsubscribe game:deleted event listener when stopping monitor
+  if (gameDeletedUnsubscribe) {
+    gameDeletedUnsubscribe()
+    gameDeletedUnsubscribe = null
+  }
 }
 
 // Callback function get invoked only when a known game is started or stopped
@@ -230,7 +244,7 @@ export async function refreshTimerStatus(): Promise<void> {
     try {
       const game = await GameDBManager.getGame(gameId)
       // Check if game exists (not deleted)
-      if (!game || !game.metadata || !game.metadata.name) {
+      if (!game || !game.metadata) {
         log.warn(`[Monitor] Game ${gameId} not found, removing from monitors`)
         monitors.delete(gameId)
         continue
