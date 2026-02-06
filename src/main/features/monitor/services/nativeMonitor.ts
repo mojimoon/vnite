@@ -35,6 +35,12 @@ export async function setupNativeMonitor(): Promise<void> {
     ids.push(doc._id)
   })
   await native.startMonitoring(pathes, ids, processEventCallback)
+
+  // Listen for game:deleted events to clean up monitor state
+  eventBus.on('game:deleted', async (data) => {
+    await removeMonitorStub(data.gameId)
+    await updateKnownGames()
+  })
 }
 
 // Send a termination signal to native monitor.
@@ -221,10 +227,22 @@ export async function refreshTimerStatus(): Promise<void> {
   }
   const gameTimerStatus: GameTimerStatus[] = []
   for (const [gameId, monitor] of monitors) {
-    gameTimerStatus.push({
-      name: (await GameDBManager.getGame(gameId)).metadata.name,
-      status: monitor.getTimerStatus()
-    })
+    try {
+      const game = await GameDBManager.getGame(gameId)
+      // Check if game exists (not deleted)
+      if (!game || !game.metadata || !game.metadata.name) {
+        log.warn(`[Monitor] Game ${gameId} not found, removing from monitors`)
+        monitors.delete(gameId)
+        continue
+      }
+      gameTimerStatus.push({
+        name: game.metadata.name,
+        status: monitor.getTimerStatus()
+      })
+    } catch (error) {
+      log.warn(`[Monitor] Error getting game ${gameId}, removing from monitors:`, error)
+      monitors.delete(gameId)
+    }
   }
   ipcManager.send('monitor:timer-status-change', gameTimerStatus)
 }
