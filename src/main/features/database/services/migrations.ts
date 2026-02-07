@@ -104,7 +104,7 @@ async function isValidGame(gameId: string, doc: any): Promise<boolean> {
 
     // Check if the monitor path exists asynchronously
     try {
-      await fs.promises.access(monitorPath)
+      await fs.promises.access(monitorPath, fs.constants.F_OK)
       return true
     } catch {
       log.info(`[Migrations] Game ${gameId} has invalid path: ${monitorPath}`)
