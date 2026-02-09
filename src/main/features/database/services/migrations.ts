@@ -2,13 +2,24 @@ import log from 'electron-log/main'
 import { GameDBManager } from '~/core/database'
 import { gameDoc, gameLocalDoc } from '@appTypes/models'
 
+interface GameValidationData {
+  game: gameDoc
+  localGame: gameLocalDoc
+}
+
 /**
  * Run all database migrations
+ * Note: Migrations are designed to be idempotent and safe to run multiple times
  */
 export async function runMigrations(): Promise<void> {
   try {
     log.info('[Migrations] Starting database migrations...')
+
+    // Run cleanup of invalid games
+    // This is safe to run on every startup as it only removes games
+    // that have no monitor path AND no play history/user data
     await cleanupZombieGames()
+
     log.info('[Migrations] Database migrations completed')
   } catch (error) {
     log.error('[Migrations] Error running migrations:', error)
@@ -58,7 +69,7 @@ async function cleanupZombieGames(): Promise<void> {
   }
 }
 
-async function isValidGame(gameId: string, doc: any): Promise<boolean> {
+async function isValidGame(gameId: string, doc: GameValidationData): Promise<boolean> {
   try {
     // Check if launcher mode exists
     const game = doc.game as gameDoc
